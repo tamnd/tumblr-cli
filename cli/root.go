@@ -2,30 +2,117 @@
 package cli
 
 import (
+	"fmt"
+	"os"
+
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"github.com/tamnd/tumblr-cli/tumblr"
 )
 
-// Build metadata, set via -ldflags at release time.
 var (
 	Version = "dev"
 	Commit  = "none"
 	Date    = "unknown"
 )
 
-// Root builds the root command and its subtree.
-func Root() *cobra.Command {
-	root := &cobra.Command{
-		Use:   "tumblr",
-		Short: "A command line for tumblr.",
-		Long: `A command line for tumblr.
+const (
+	exitError  = 1
+	exitUsage  = 2
+	exitNoData = 3
+)
 
-This is a fresh scaffold. Add your commands here on top of the tumblr
-library package, then wire them into Root with root.AddCommand.`,
+type ExitError struct {
+	Code int
+	Err  error
+}
+
+func (e *ExitError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("exit %d", e.Code)
+}
+
+func (e *ExitError) Unwrap() error { return e.Err }
+
+func codeError(code int, err error) error { return &ExitError{Code: code, Err: err} }
+
+type App struct {
+	client   *tumblr.Client
+	cfg      tumblr.Config
+	output   string
+	fields   []string
+	noHeader bool
+	template string
+	limit    int
+}
+
+func Root() *cobra.Command {
+	app := &App{cfg: tumblr.DefaultConfig()}
+
+	root := &cobra.Command{
+		Use:           "tumblr",
+		Short:         "Browse Tumblr blogs, posts, and tags from the command line",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return app.setup()
+		},
 	}
 
-	root.AddCommand(newVersionCmd())
-	// TODO: root.AddCommand(newGetCmd()), etc.
+	pf := root.PersistentFlags()
+	pf.StringVarP(&app.output, "output", "o", "auto", "output: table|json|jsonl|csv|tsv|url|raw")
+	pf.StringSliceVar(&app.fields, "fields", nil, "comma-separated columns to include")
+	pf.BoolVar(&app.noHeader, "no-header", false, "omit header row in table/csv/tsv")
+	pf.StringVar(&app.template, "template", "", "Go text/template per record")
+	pf.IntVarP(&app.limit, "limit", "n", 20, "limit number of records")
+	pf.DurationVar(&app.cfg.Rate, "delay", app.cfg.Rate, "minimum spacing between requests")
+	pf.DurationVar(&app.cfg.Timeout, "timeout", app.cfg.Timeout, "per-request timeout")
+	pf.IntVar(&app.cfg.Retries, "retries", app.cfg.Retries, "retry attempts on 429/5xx")
+
+	root.AddCommand(
+		app.tagCmd(),
+		app.postsCmd(),
+		app.infoCmd(),
+		newVersionCmd(),
+	)
 	return root
+}
+
+func (a *App) setup() error {
+	if a.output == "" || a.output == "auto" {
+		if isatty.IsTerminal(os.Stdout.Fd()) {
+			a.output = string(FormatTable)
+		} else {
+			a.output = string(FormatJSONL)
+		}
+	}
+	if !Format(a.output).Valid() {
+		return codeError(exitUsage, fmt.Errorf("unknown output format %q", a.output))
+	}
+	a.client = tumblr.NewClient(a.cfg)
+	return nil
+}
+
+func (a *App) render(records any) error {
+	r := NewRenderer(os.Stdout, Format(a.output), a.fields, a.noHeader, a.template)
+	return r.Render(records)
+}
+
+func (a *App) renderOrEmpty(records any, n int) error {
+	if err := a.render(records); err != nil {
+		return err
+	}
+	if n == 0 {
+		return codeError(exitNoData, nil)
+	}
+	return nil
+}
+
+func mapFetchErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return codeError(exitError, err)
 }

@@ -1,10 +1,8 @@
 # tumblr
 
-A command line for tumblr.
+Browse Tumblr blogs, posts, and tags from the command line.
 
-`tumblr` is a single pure-Go binary. It speaks to tumblr over plain
-HTTPS, shapes the responses into clean records, and pipes into the rest of your
-tools. No API key, nothing to run alongside it.
+`tumblr` is a single pure-Go binary. No API key required.
 
 ## Install
 
@@ -12,8 +10,7 @@ tools. No API key, nothing to run alongside it.
 go install github.com/tamnd/tumblr-cli/cmd/tumblr@latest
 ```
 
-Or grab a prebuilt binary from the [releases](https://github.com/tamnd/tumblr-cli/releases), or run
-the container image:
+Or grab a prebuilt binary from the [releases](https://github.com/tamnd/tumblr-cli/releases), or run the container image:
 
 ```bash
 docker run --rm ghcr.io/tamnd/tumblr:latest --help
@@ -22,41 +19,43 @@ docker run --rm ghcr.io/tamnd/tumblr:latest --help
 ## Usage
 
 ```bash
-tumblr --help
-tumblr version
+# List posts tagged "photography"
+tumblr tag photography
+
+# List posts from a specific blog
+tumblr posts staff
+
+# Show blog metadata
+tumblr info staff
+
+# JSON output
+tumblr tag art -o json -n 10
+
+# Table output
+tumblr posts nasa -o table
 ```
 
-This is a fresh scaffold. The command tree starts with `version`; build out the
-real commands in `cli/` on top of the `tumblr` library package.
+## Commands
 
-## Development
+| Command | Description |
+|---------|-------------|
+| `tag <tag>` | List posts tagged with a given tag |
+| `posts <blog>` | List posts from a blog |
+| `info <blog>` | Show blog metadata |
+| `version` | Show version information |
+
+## Global flags
 
 ```
-cmd/tumblr/   thin main, wires cli.Root into fang
-cli/                 the cobra command tree
-tumblr/                the library: HTTP client and data models
-docs/                tago documentation site
+-o, --output string    output format: table|json|jsonl|csv|tsv|url|raw (default "auto")
+-n, --limit int        limit number of records (default 20)
+    --fields strings   comma-separated columns to include
+    --no-header        omit header row
+    --template string  Go text/template per record
+    --timeout duration per-request timeout (default 30s)
+    --delay duration   minimum spacing between requests
+    --retries int      retry attempts on 429/5xx (default 3)
 ```
-
-```bash
-make build      # ./bin/tumblr
-make test       # go test ./...
-make vet        # go vet ./...
-```
-
-## Releasing
-
-Push a version tag and GitHub Actions runs GoReleaser, which builds the
-archives, Linux packages, the multi-arch GHCR image, checksums, SBOMs, and a
-cosign signature:
-
-```bash
-git tag v0.1.0
-git push --tags
-```
-
-The Homebrew and Scoop steps self-disable until their tokens exist, so the first
-release works with no extra secrets.
 
 ## License
 
